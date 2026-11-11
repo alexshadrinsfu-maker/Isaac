@@ -1,0 +1,28 @@
+import {AbyssalGame} from './game.js';
+import {render} from './render.js';
+
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d',{alpha:false});
+const game=new AbyssalGame();
+window.__abyssalTest=game;
+game.ctx=ctx;
+const W=420,H=820;
+let scale=1,offsetX=0,offsetY=0,last=0,raf=0;
+const keys=new Set(),pointers=new Map();
+
+function resize(){const rect=canvas.getBoundingClientRect();const dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr);scale=Math.min(canvas.width/W,canvas.height/H);offsetX=(canvas.width-W*scale)/2;offsetY=(canvas.height-H*scale)/2;ctx.setTransform(scale,0,0,scale,offsetX,offsetY)}
+function point(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)/r.width*W,y:(e.clientY-r.top)/r.height*H}}
+function buttonAt(p){return [...game.buttons].reverse().find(b=>p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h)}
+function action(action){if(action==='select'){game.state='select';return}if(action.startsWith('char:')){game.chooseCharacter(action.slice(5));return}if(action==='locked')return;if(action==='settings'){game.pauseFrom=game.state;game.state='settings';return}if(action==='stats'){game.state='stats';return}if(action==='achievements'){game.state='achievements';return}if(action==='menu'){game.state='title';game.mapOpen=false;return}if(action==='settings-back'){game.state=game.pauseFrom==='playing'?'paused':game.pauseFrom;return}if(action==='resume'){game.state='playing';return}if(action==='pause'){if(game.state==='playing'){game.pauseFrom='playing';game.state='paused'}return}if(action==='abandon'){game.state='title';game.mapOpen=false;return}if(action==='retry'){game.startRun();game.mapOpen=false;return}if(action==='descend'){game.nextFloor();game.mapOpen=false;return}if(action==='hand'){game.settings.hand=game.settings.hand==='right'?'left':'right'}else if(action==='size'){game.settings.stickSize=game.settings.stickSize>=1.25?.75:Math.round((game.settings.stickSize+.25)*100)/100}else if(action==='sensitivity'){game.settings.sensitivity=game.settings.sensitivity>=1.5?.7:Math.round((game.settings.sensitivity+.2)*10)/10}else if(action==='auto'){game.settings.auto=!game.settings.auto;game.aimMode=!game.settings.auto}else if(action==='sound'){game.settings.sound=!game.settings.sound}else if(action==='aim'){game.aimMode=!game.aimMode;game.settings.auto=!game.aimMode}else if(action==='relic'){game.input.action=true}else if(action==='dash'){game.input.dash=true}else if(action==='map'){game.mapOpen=!game.mapOpen}else if(action==='interact'){game.input.interact=true}game.persist()}
+function onDown(e){e.preventDefault();canvas.setPointerCapture?.(e.pointerId);const p=point(e);if(game.state!=='playing'){const b=buttonAt(p);if(b)action(b.action);return}const b=buttonAt(p);if(b){action(b.action);return}if(p.y>630){const joyX=game.settings.hand==='right'?87:333;const joyZone=Math.abs(p.x-joyX)<105;if(joyZone){pointers.set(e.pointerId,{type:'joy',origin:p});updateJoy(p);return}if(game.aimMode){pointers.set(e.pointerId,{type:'aim',origin:p});updateAim(p);return}}if(game.aimMode&&p.x>(game.settings.hand==='right'?190:0)&&p.x<(game.settings.hand==='right'?420:230)){pointers.set(e.pointerId,{type:'aim',origin:p});updateAim(p)}}
+function onMove(e){const state=pointers.get(e.pointerId);if(!state)return;e.preventDefault();const p=point(e);if(state.type==='joy')updateJoy(p,state.origin);else if(state.type==='aim')updateAim(p,state.origin)}
+function onUp(e){const state=pointers.get(e.pointerId);if(state?.type==='joy'){game.input.x=0;game.input.y=0}if(state?.type==='aim'){game.input.manual=false;game.input.aim=null}pointers.delete(e.pointerId)}
+function updateJoy(p,origin=p){const base=origin,dx=p.x-base.x,dy=p.y-base.y,limit=48*game.settings.stickSize,l=Math.hypot(dx,dy)||1,m=Math.min(1,l/limit);game.input.x=dx/l*m;game.input.y=dy/l*m}
+function updateAim(p,origin=p){let dx=p.x-origin.x,dy=p.y-origin.y;if(Math.hypot(dx,dy)<10){dx=game.player?.faceX||1;dy=game.player?.faceY||0}game.input.aim={x:dx,y:dy};game.input.manual=true}
+canvas.addEventListener('pointerdown',onDown,{passive:false});canvas.addEventListener('pointermove',onMove,{passive:false});canvas.addEventListener('pointerup',onUp);canvas.addEventListener('pointercancel',onUp);
+window.addEventListener('resize',resize);resize();
+window.addEventListener('keydown',e=>{const k=e.key.toLowerCase();if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k))e.preventDefault();keys.add(k);if(e.repeat)return;if(k==='escape'){if(game.state==='playing'){game.pauseFrom='playing';game.state='paused'}else if(game.state==='paused')game.state='playing';else if(game.state==='settings')game.state=game.pauseFrom==='playing'?'paused':'title';return}if(game.state!=='playing')return;if(k==='e')game.input.action=true;if(k==='q'||k==='shift')game.input.dash=true;if(k==='m')game.mapOpen=!game.mapOpen;if(k===' '){game.settings.auto=!game.settings.auto;game.aimMode=!game.settings.auto;game.persist()}});
+window.addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
+function keyboard(){let x=0,y=0;if(keys.has('a')||keys.has('arrowleft'))x--;if(keys.has('d')||keys.has('arrowright'))x++;if(keys.has('w')||keys.has('arrowup'))y--;if(keys.has('s')||keys.has('arrowdown'))y++;if(x||y){const m=Math.hypot(x,y);game.input.x=x/m;game.input.y=y/m}else if(![...pointers.values()].some(p=>p.type==='joy')){game.input.x=0;game.input.y=0}}
+function frame(now){const dt=last?Math.min((now-last)/1000,.05):0;last=now;keyboard();game.tick(dt);render(game);raf=requestAnimationFrame(frame)}
+raf=requestAnimationFrame(frame);
